@@ -107,8 +107,11 @@ input[type="number"] {
     width: 35px;
     text-align: right;
 }
-label {
+form > * {
     margin-bottom: 15px;
+}
+form > *:last-child {
+    margin-bottom: 0px;
 }
 textarea {
     min-width: 275px;
@@ -129,6 +132,9 @@ textarea {
 .hidden {
     display: none !important;
 }
+p {
+    margin: 0; /* markdown has p tag wrappers, remove margins so there's no extra spacing*/
+}
 </style>
 </head>
 <body>
@@ -144,6 +150,7 @@ textarea {
     <button onclick="toggleHashUpdatedMessage(false)">X</button></div>
 <div id="container"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@11.0.0/dist/markdown-it.min.js"></script>
 <script>
     const ALWAYS_EMPTY_SET = new Set();
     const state = {
@@ -153,7 +160,8 @@ textarea {
                 numberToChoose: int,
                 options: str[],
                 chosenIndexes: Set(int),
-                rejectedIndexes: Set(int)
+                rejectedIndexes: Set(int),
+                useMarkdown: boolean,
             }
             */
         ],
@@ -168,7 +176,7 @@ textarea {
         append: (child) => {containerElement.append(child);},
     };
 
-    const numberInputTag = 'input';
+    const inputTag = 'input';
     const optionsTag = 'textarea';
 
     const KEYCODE_FOR_RETURN = 13;
@@ -179,6 +187,8 @@ textarea {
         KEYCODE_FOR_DELETE,
         KEYCODE_FOR_RETURN,
     ];
+
+    const markdownit = window.markdownit({ html: false });
 
     main();
 
@@ -215,13 +225,15 @@ textarea {
     }
 
     function getOptions(listString) {
-        let [fullMatch, number, options] =  listString.match(/^([0-9]+from:)?(.*)/);
+        let [fullMatch, number, useMarkdown, options] =  listString.match(/^([0-9]+from(MDList)?:)?(.*)/);
         number = parseInt(number);
         const list = {
             numberToChoose: Number.isFinite(number) ? number : 1,
             options: decodeURIComponent(options)
                 .split(',')
                 .filter(s => s), // remove empty strings
+            useMarkdown: Boolean(useMarkdown),
+            rejectedIndexes: new Set(),
         };
         fixNumberToChoose(list);
         return list;
@@ -262,7 +274,8 @@ textarea {
         return Math.round(randomNumberScaled);
     }
 
-    function render({options, chosenIndexes, rejectedIndexes}, listIndex, {replacementContainer}) {
+    function render(list, listIndex, {replacementContainer}) {
+        const {options, chosenIndexes, rejectedIndexes} = list;
         const listContainer = getEmptyListContainer();
         const unchosenIndexes = [];
         options.forEach((option, index) => {
@@ -271,9 +284,8 @@ textarea {
             }
         });
 
-        rejectedIndexes = rejectedIndexes || new Set();
-        listContainer.append(renderChosenList(options, chosenIndexes, rejectedIndexes));
-        unchosenIndexes.length && listContainer.append(renderOtherOptionsList(options, unchosenIndexes));
+        listContainer.append(renderChosenList(list, chosenIndexes, rejectedIndexes));
+        unchosenIndexes.length && listContainer.append(renderOtherOptionsList(list, unchosenIndexes));
 
         if (!replacementContainer) {
             CONTAINER.append(listContainer);
@@ -320,27 +332,25 @@ textarea {
         }
     }
 
-    function renderChosenList(options, indexes, rejectedIndexes) {
-        return renderList({
-            options,
+    function renderChosenList(list, indexes, rejectedIndexes) {
+        return renderList(list, {
             indexes,
             rejectedIndexes,
             className: 'chosen-list',
             // title: "Chosen:",
-            isRejectable: options.length > indexes.size,
+            isRejectable: list.options.length > indexes.size,
         });
     }
 
-    function renderOtherOptionsList(options, indexes) {
-        return renderList({
-            options,
+    function renderOtherOptionsList(list, indexes) {
+        return renderList(list, {
             indexes,
             className: 'unchosen-list',
-            title: '(unchosen options)'
+            title: '(unchosen options)',
         });
     }
 
-    function renderList({options, indexes, className, title, rejectedIndexes, isRejectable}) {
+    function renderList(list, {indexes, className, title, rejectedIndexes, isRejectable}) {
         const listElement = el('ol');
         if (indexes.length === 0) {
             return listElement;
@@ -352,20 +362,25 @@ textarea {
             const className = isRejected ? 'rejected' : '';
             listElement.append(
                 renderItem(
-                    options[index],
+                    list.options[index],
                     className,
-                    (isRejectable && !isRejected) ? index : null
+                    (isRejectable && !isRejected) ? index : null,
+                    list.useMarkdown
                 )
             );
         });
         return listElement;
     }
 
-    function renderItem(text, className, rejectionIndex) {
+    function renderItem(text, className, rejectionIndex, useMarkdown) {
         const item = el('li');
         className && item.classList.add(className);
         const itemText = el('span');
-        itemText.textContent = text;
+        if (!useMarkdown) {
+            itemText.textContent = text;
+        } else {
+            itemText.innerHTML = markdownit.render(text);
+        }
         item.append(itemText);
         if (rejectionIndex !== null) {
             item.append(renderRejectionButton(rejectionIndex));
@@ -428,12 +443,13 @@ textarea {
         state.optionsLists.forEach(renderForm);
     }
 
-    function renderForm({options, numberToChoose}) {
+    function renderForm({options, numberToChoose, useMarkdown}) {
         const form = el('form');
         form.classList.add('list-container');
 
-        form.append(renderNumberInputLine(numberToChoose));
         form.append(renderOptionsInput(options));
+        form.append(renderNumberInputLine(numberToChoose));
+        form.append(renderMarkdownCheckbox(useMarkdown));
 
         CONTAINER.append(form);
     }
@@ -441,7 +457,7 @@ textarea {
     function renderNumberInputLine(numberToChoose = 1) {
         const numberLabel = el('label');
         numberLabel.textContent = '# to choose: ';
-        const numberInput = el(numberInputTag);
+        const numberInput = el(inputTag);
         numberInput.setAttribute('type', 'number');
         numberInput.setAttribute('min', 1);
         numberInput.value = numberToChoose || 1;
@@ -450,8 +466,8 @@ textarea {
     }
 
     function renderOptionsInput(options = []) {
-        const textarea = el('textarea');
-        textarea.setAttribute('placeholder', 'enter options, one per line');
+        const textarea = el(optionsTag);
+        textarea.setAttribute('placeholder', 'enter options \nto select randomly from, \none per line');
         textarea.setAttribute('rows', 3);
         textarea.value = options.join('\n');
         verticallyAutoscaleTextArea({target: textarea});
@@ -459,6 +475,16 @@ textarea {
         textarea.onkeydown = optionsKeyDown;
         textarea.onkeyup = optionsKeyUp;
         return textarea;
+    }
+
+    function renderMarkdownCheckbox(checked) {
+        const label = el('label');
+        label.textContent = ' use markdown for options';
+        const checkbox = el(inputTag);
+        checkbox.type = 'checkbox';
+        checkbox.checked = checked;
+        label.prepend(checkbox);
+        return label;
     }
 
     function el(tag) {
@@ -471,17 +497,19 @@ textarea {
             .join(';');
 
         function getListOptionsFromForm(form) {
-            const numberInput = form.getElementsByTagName(numberInputTag)[0];
+            const numberInput = form.getElementsByTagName(inputTag)[0];
+            const markdownCheckbox = form.getElementsByTagName(inputTag)[1];
             const list = {
                 numberToChoose: numberInput.value,
                 options: form.getElementsByTagName(optionsTag)[0]
                     .value
                     .split('\n')
                     .filter(val => val.trimEnd()) // remove whitespace strings and whitespace on the right
-                    .map(encodeURIComponent)
+                    .map(encodeURIComponent),
+                useMarkdown: markdownCheckbox.checked,
             };
             fixNumberToChoose(list);
-            return `${list.numberToChoose}from:${list.options.join(',')}`;
+            return `${list.numberToChoose}from${list.useMarkdown ? 'MDList' : ''}:${list.options.join(',')}`;
         }
     }
 

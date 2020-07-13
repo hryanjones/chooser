@@ -68,11 +68,31 @@ button {
     font-size: 2em;
     padding-inline-start: 0px;
     list-style: none;
+    margin-bottom: 0px;
+}
+.chosen-list > li {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+}
+.chosen-list > li > span {
+    margin-left: 1em;
+    text-indent: -1em;
+}
+.rejection-button {
+    margin-left: 10px;
+    margin-top: 8px;
+}
+.rejected {
+    font-size: 80%;
+    opacity: 0.3;
+    text-decoration: line-through;
 }
 ol.unchosen-list {
     list-style: circle;
     padding-inline-start: 20px;
     margin: 0px;
+    margin-top: 32px;
 }
 ol.unchosen-list:before {
     content: attr(aria-label);
@@ -127,8 +147,18 @@ textarea {
 <script>
     const ALWAYS_EMPTY_SET = new Set();
     const state = {
-        optionsLists: [], // list structure {numberToChoose, options}
+        optionsLists: [
+            /*
+            list structure = {
+                numberToChoose: int,
+                options: str[],
+                chosenIndexes: Set(int),
+                rejectedIndexes: Set(int)
+            }
+            */
+        ],
     };
+
 
     const hashUpdatedMessage = document.getElementById('hash-updated');
     const containerElement = document.getElementById('container');
@@ -162,10 +192,14 @@ textarea {
             return;
         }
 
-        optionsLists.forEach(({numberToChoose, options}) => {
-            const chosenIndexes = chooseFromOptions({numberToChoose, options});
-            render({options, chosenIndexes});
-        });
+        optionsLists.forEach(saveChosenIndexes);
+        optionsLists.forEach(render);
+
+        function saveChosenIndexes(list) {
+            const { numberToChoose, options } = list;
+            const chosenIndexes = chooseFromOptions({ numberToChoose, options });
+            list.chosenIndexes = chosenIndexes;
+        }
     }
 
     function getOptionsLists() {
@@ -198,7 +232,7 @@ textarea {
             numberToChoose = 1;
         }
         chosenIndexes = chosenIndexes || new Set();
-        unchosenIndexesObject = unchosenIndexesObject || createIndexesObject(options);
+        unchosenIndexesObject = unchosenIndexesObject || createIndexesObject(options, chosenIndexes);
         const unchosenIndexes = Object.keys(unchosenIndexesObject);
 
         const newIndexOfIndex = getRandomIntegerUpTo(unchosenIndexes.length - 1);
@@ -212,10 +246,12 @@ textarea {
         return chosenIndexes;
     }
 
-    function createIndexesObject(options) {
+    function createIndexesObject(options, chosenIndexes) {
         const indexesObject = {};
         options.forEach((o, index) => {
-            indexesObject[index] = '';
+            if (!chosenIndexes.has(index)) {
+                indexesObject[index] = '';
+            }
         });
         return indexesObject;
     }
@@ -226,56 +262,121 @@ textarea {
         return Math.round(randomNumberScaled);
     }
 
-    function render({options, chosenIndexes}) {
-        const listContainer = el('div');
-        listContainer.classList.add('list-container')
-        const chosen = [];
-        const unchosen = [];
-        options.forEach((option, index) => {
-            const list = chosenIndexes.has(index) ? chosen : unchosen;
-            list.push(option);
-        });
-        listContainer.append(renderChosenList(chosen));
-        listContainer.append(renderOtherOptionsList(unchosen));
+    function render({options, chosenIndexes, rejectedIndexes}, listIndex, {replacementContainer}) {
+        const listContainer = getEmptyListContainer();
+        const unchosenIndexes = options
+            .filter((option, index) => !chosenIndexes.has(index))
+            .map((option, index) => index);
 
-        CONTAINER.append(listContainer);
+        rejectedIndexes = rejectedIndexes || new Set();
+        listContainer.append(renderChosenList(options, chosenIndexes, rejectedIndexes));
+        unchosenIndexes.length && listContainer.append(renderOtherOptionsList(options, unchosenIndexes));
+
+        if (!replacementContainer) {
+            CONTAINER.append(listContainer);
+            listContainer.onclick = rejectOption;
+        }
+
+        function getEmptyListContainer() {
+            if (replacementContainer) {
+                replacementContainer.innerHTML = '';
+                return replacementContainer;
+            }
+            const div = el('div');
+            div.classList.add('list-container');
+            return div;
+        }
+
+        function rejectOption(event) {
+            const rejectedIndex = parseInt(event.target.dataset.index);
+            if (!Number.isInteger(rejectedIndex)) {
+                return;
+            }
+            rejectedIndexes.add(rejectedIndex);
+
+            const list = state.optionsLists[listIndex];
+            list.rejectedIndexes = rejectedIndexes;
+            let newIndexes = Array.from(
+                chooseFromOptions({
+                    options,
+                    numberToChoose: 1,
+                    chosenIndexes: list.chosenIndexes,
+                })
+            );
+
+            const rejectedIndexPosition = newIndexes.indexOf(rejectedIndex);
+            // put the new item right after the rejected one
+            const newOption = newIndexes.pop();
+            newIndexes = newIndexes
+                .slice(0, rejectedIndexPosition)
+                .concat(newOption)
+                .concat(newIndexes.slice(rejectedIndexPosition));
+
+            list.chosenIndexes = new Set(newIndexes);
+            render(list, listIndex, {replacementContainer: listContainer});
+        }
     }
 
-    function renderChosenList(chosenList) {
+    function renderChosenList(options, indexes, rejectedIndexes) {
         return renderList({
-            list: chosenList,
+            options,
+            indexes,
+            rejectedIndexes,
             className: 'chosen-list',
-            // title: "Chosen:"
+            // title: "Chosen:",
+            isRejectable: options.length > indexes.size,
         });
     }
 
-    function renderOtherOptionsList(options) {
+    function renderOtherOptionsList(options, indexes) {
         return renderList({
-            list: options,
+            options,
+            indexes,
             className: 'unchosen-list',
             title: '(unchosen options)'
         });
     }
 
-    function renderList({list, className, title}) {
+    function renderList({options, indexes, className, title, rejectedIndexes, isRejectable}) {
         const listElement = el('ol');
-        if (list.length === 0) {
+        if (indexes.length === 0) {
             return listElement;
         }
         title && listElement.setAttribute('aria-label', title);
         className && listElement.classList.add(className);
-        list.forEach(item => {
+        indexes.forEach(index => {
+            const isRejected = rejectedIndexes && rejectedIndexes.has(index);
+            const className = isRejected ? 'rejected' : '';
             listElement.append(
-                renderItem(item)
+                renderItem(
+                    options[index],
+                    className,
+                    (isRejectable && !isRejected) ? index : null
+                )
             );
         });
         return listElement;
     }
 
-    function renderItem(text) {
+    function renderItem(text, className, rejectionIndex) {
         const item = el('li');
-        item.textContent = text;
+        className && item.classList.add(className);
+        const itemText = el('span');
+        itemText.textContent = text;
+        item.append(itemText);
+        if (rejectionIndex !== null) {
+            item.append(renderRejectionButton(rejectionIndex));
+        }
         return item;
+    }
+
+    function renderRejectionButton(index) {
+        const btn = el('button');
+        btn.textContent = 'X';
+        btn.classList.add('rejection-button');
+        btn.setAttribute('title', 'Pick a different option');
+        btn.dataset.index = index;
+        return btn;
     }
 
     function fixNumberToChoose(list) {

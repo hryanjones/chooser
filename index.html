@@ -264,9 +264,12 @@ textarea {
 
     function render({options, chosenIndexes, rejectedIndexes}, listIndex, {replacementContainer}) {
         const listContainer = getEmptyListContainer();
-        const unchosenIndexes = options
-            .filter((option, index) => !chosenIndexes.has(index))
-            .map((option, index) => index);
+        const unchosenIndexes = [];
+        options.forEach((option, index) => {
+            if (!chosenIndexes.has(index)) {
+                unchosenIndexes.push(index);
+            }
+        });
 
         rejectedIndexes = rejectedIndexes || new Set();
         listContainer.append(renderChosenList(options, chosenIndexes, rejectedIndexes));

@@ -176,6 +176,8 @@ p {
         append: (child) => {containerElement.append(child);},
     };
 
+    const COMMA = 'COMMA'; // used to sanitize commas in the URL
+
     const inputTag = 'input';
     const optionsTag = 'textarea';
 
@@ -231,7 +233,8 @@ p {
             numberToChoose: Number.isFinite(number) ? number : 1,
             options: decodeURIComponent(options)
                 .split(',')
-                .filter(s => s), // remove empty strings
+                .filter(s => s) // remove empty strings
+                .map(s => s.replace(/COMMA/g, ',')),
             useMarkdown: Boolean(useMarkdown),
             rejectedIndexes: new Set(),
         };
@@ -505,12 +508,16 @@ p {
                     .value
                     .split('\n')
                     .filter(val => val.trimEnd()) // remove whitespace strings and whitespace on the right
-                    .map(encodeURIComponent),
+                    .map(encodeForHash),
                 useMarkdown: markdownCheckbox.checked,
             };
             fixNumberToChoose(list);
             return `${list.numberToChoose}from${list.useMarkdown ? 'MDList' : ''}:${list.options.join(',')}`;
         }
+    }
+
+    function encodeForHash(string) {
+        return encodeURIComponent(string.replace(/,/g, COMMA));
     }
 
     function toggleHashUpdatedMessage(show) {

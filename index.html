@@ -523,6 +523,7 @@ p {
     function updateHashWithFormData() {
         window.location.hash = Array.from(document.getElementsByTagName('form'))
             .map(getListOptionsFromForm)
+            .filter(list => list) // remove list that doesn't have options
             .join(';');
 
         function getListOptionsFromForm(form) {
@@ -538,6 +539,9 @@ p {
                 useMarkdown: markdownCheckbox.checked,
             };
             fixNumberToChoose(list);
+            if (list.numberToChoose === 0) {
+                return '';
+            }
             return `${list.numberToChoose}from${list.useMarkdown ? 'MDList' : ''}:${list.options.join(',')}`;
         }
     }

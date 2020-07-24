@@ -56,12 +56,20 @@ button {
 .list-container {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     margin: 10px;
     padding: 10px;
     background-color: white;
 
     /* so "unchosen options" is all on one line */
     min-width: 140px;
+}
+.add-new-list-button {
+    display: none;
+}
+form.list-container:last-child .add-new-list-button {
+    /* only show add list button in the last form */
+    display: inline-block;
 }
 .chosen-list {
     margin-top: 0px;
@@ -199,7 +207,7 @@ p {
         const optionsLists = getOptionsLists();
         state.optionsLists = optionsLists;
         if (optionsLists.length === 0) {
-            optionsLists.push({numberToChoose: 1, options: []});
+            optionsLists.push(getEmptyList());
             toggleEdit();
             return;
         }
@@ -212,6 +220,10 @@ p {
             const chosenIndexes = chooseFromOptions({ numberToChoose, options });
             list.chosenIndexes = chosenIndexes;
         }
+    }
+
+    function getEmptyList() {
+        return {numberToChoose: 1, options: []};
     }
 
     function getOptionsLists() {
@@ -453,6 +465,7 @@ p {
         form.append(renderOptionsInput(options));
         form.append(renderNumberInputLine(numberToChoose));
         form.append(renderMarkdownCheckbox(useMarkdown));
+        form.append(renderAddFormButton());
 
         CONTAINER.append(form);
     }
@@ -488,6 +501,19 @@ p {
         checkbox.checked = checked;
         label.prepend(checkbox);
         return label;
+    }
+
+    function renderAddFormButton() {
+        const button = el('button');
+        button.textContent = 'add another list';
+        button.classList.add('add-new-list-button');
+        button.onclick = addNewList;
+        return button;
+    }
+
+    function addNewList(event) {
+        event.preventDefault(); // don't submit the form
+        renderForm(getEmptyList());
     }
 
     function el(tag) {
